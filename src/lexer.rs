@@ -36,12 +36,7 @@ impl Iterator for TokenIterator<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Token> {
-        println!("Calling next !");
-
         let mut current = self.chars.peek();
-
-        println!("Peeked");
-        println!("Current is none: {}", current.is_none());
 
         // consume every possible whitespace char, advancing to the next valid char
         while let Some(c) = current {
