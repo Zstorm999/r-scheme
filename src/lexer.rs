@@ -4,6 +4,7 @@ use std::str::Chars;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Integer(i64),
+    Float(f64),
     Symbol(String),
     LParen,
     RParen,
@@ -13,6 +14,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Integer(n) => write!(f, "{}", n),
+            Token::Float(n) => write!(f, "{}", n),
             Token::Symbol(s) => write!(f, "{}", s),
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
@@ -86,6 +88,8 @@ impl Iterator for TokenIterator<'_> {
             _ => {
                 if let Ok(i) = token.parse::<i64>() {
                     return Some(Token::Integer(i));
+                } else if let Ok(f) = token.parse::<f64>() {
+                    return Some(Token::Float(f));
                 } else {
                     return Some(Token::Symbol(token));
                 }
@@ -124,6 +128,13 @@ mod test {
         let tokens: Vec<Token> = tokenize("keyword").collect();
 
         assert_eq!(tokens, vec![Token::Symbol("keyword".to_string())]);
+    }
+
+    #[test]
+    fn if_float_parses_correctly() {
+        let tokens: Vec<Token> = tokenize("42.42").collect();
+
+        assert_eq!(tokens, vec![Token::Float(42.42)]);
     }
 
     #[test]
