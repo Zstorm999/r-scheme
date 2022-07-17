@@ -1,4 +1,6 @@
 mod lexer;
+mod object;
+mod parser;
 
 use lexer::{tokenize, Token};
 
