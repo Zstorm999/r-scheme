@@ -25,42 +25,42 @@ impl fmt::Display for ParseError {
 pub fn parse(s: &str) -> Result<Object, ParseError> {
     let mut tokens = tokenize(s);
 
-    parse_list(&mut tokens)
+    // parse first token outside of loop
+    if let Some(t) = tokens.next() {
+        match t {
+            Token::Integer(n) => Ok(Object::Integer(n)),
+            Token::Float(f) => Ok(Object::Float(f)),
+            Token::String(s) => Ok(Object::String(s)),
+            Token::Symbol(s) => Ok(Object::Symbol(s)),
+            Token::LParen => parse_list(&mut tokens),
+            Token::RParen => Err(ParseError::new("Unauthorized token: )")),
+            Token::LexerError(e) => Err(ParseError::new(&e)),
+        }
+    } else {
+        Err(ParseError::new(""))
+    }
 }
 
 fn parse_list(tokens: &mut TokenIterator) -> Result<Object, ParseError> {
-    fn parse_inner_list(tokens: &mut TokenIterator) -> Result<Object, ParseError> {
-        let mut list: Vec<Object> = Vec::new();
+    let mut list: Vec<Object> = Vec::new();
 
-        while let Some(t) = tokens.next() {
-            match t {
-                Token::Integer(n) => list.push(Object::Integer(n)),
-                Token::Float(f) => list.push(Object::Float(f)),
-                Token::String(s) => list.push(Object::String(s)),
-                Token::Symbol(s) => list.push(Object::Symbol(s)),
-                Token::LParen => {
-                    let sub_list = parse_inner_list(tokens)?;
-                    list.push(sub_list);
-                }
-                Token::RParen => return Ok(Object::List(list)),
-                Token::LexerError(e) => return Err(ParseError::new(&e)),
+    while let Some(t) = tokens.next() {
+        match t {
+            Token::Integer(n) => list.push(Object::Integer(n)),
+            Token::Float(f) => list.push(Object::Float(f)),
+            Token::String(s) => list.push(Object::String(s)),
+            Token::Symbol(s) => list.push(Object::Symbol(s)),
+            Token::LParen => {
+                let sub_list = parse_list(tokens)?;
+                list.push(sub_list);
             }
+            Token::RParen => return Ok(Object::List(list)),
+            Token::LexerError(e) => return Err(ParseError::new(&e)),
         }
-
-        //no rparen has been encountered !
-        Err(ParseError::new("Encountered an unexpected EOF !"))
     }
 
-    let token = tokens.next();
-
-    if token != Some(Token::LParen) {
-        return Err(ParseError::new(&format!(
-            "Excepted Left Paren, found {:?}",
-            token
-        )));
-    }
-
-    parse_inner_list(tokens)
+    //no rparen has been encountered !
+    Err(ParseError::new("Encountered an unexpected EOF !"))
 }
 
 #[cfg(test)]

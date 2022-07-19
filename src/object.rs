@@ -19,17 +19,13 @@ impl fmt::Display for Object {
             Object::Bool(b) => write!(f, "{}", b),
             Object::String(s) => write!(f, "\"{}\"", s),
             Object::Symbol(s) => write!(f, "{}", s),
-            Object::Lambda(params, body) => {
-                write!(f, "λ ")?;
+            Object::Lambda(params, _) => {
+                write!(f, "lambda (")?;
 
                 for p in params {
-                    write!(f, "{} ", p)?;
+                    write!(f, "{}, ", p)?;
                 }
-                write!(f, ". ")?;
-
-                for e in body {
-                    write!(f, "{} ", e)?;
-                }
+                write!(f, ")")?;
 
                 Ok(())
             }

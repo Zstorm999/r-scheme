@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::env::{Env, EnvRef};
 
-use crate::parser::{parse, ParseError};
+use crate::parser::parse;
 
 pub fn eval(program: &str, env: &mut EnvRef) -> Result<Object, String> {
     match parse(program) {
@@ -18,7 +18,7 @@ fn eval_obj(obj: &Object, env: &mut EnvRef) -> Result<Object, String> {
         Object::Bool(_) => Ok(obj.clone()),
         Object::Float(x) => Ok(Object::Float(*x)),
         Object::Integer(n) => Ok(Object::Integer(*n)),
-        Object::Lambda(_params, _body) => Err("Lamda not yet evaluable".to_string()),
+        Object::Lambda(_params, _body) => Err("Lambda not yet evaluable".to_string()),
         Object::List(list) => eval_list(list, env),
         Object::String(s) => Ok(Object::String(s.to_string())),
         Object::Symbol(s) => eval_symbol(s, env),
@@ -91,19 +91,32 @@ fn eval_binop(list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
 
     let left = match left {
         Object::Integer(n) => n,
-        _ => return Err(format!("Left operand is not an integer: {}", left)),
+        _ => {
+            return Err(format!(
+                "({}) Left operand is not an integer: {}",
+                operator, left
+            ))
+        }
     };
 
     let right = match right {
         Object::Integer(n) => n,
-        _ => return Err(format!("Right operand is not an integer: {}", right)),
+        _ => {
+            return Err(format!(
+                "({}) Right operand is not an integer: {}",
+                operator, right
+            ))
+        }
     };
 
     if let Object::Symbol(s) = operator {
         match s.as_str() {
             "+" => Ok(Object::Integer(left + right)),
             "-" => Ok(Object::Integer(left - right)),
-            "*" => Ok(Object::Integer(left * right)),
+            "*" => match i64::checked_mul(left, right) {
+                Some(value) => Ok(Object::Integer(value)),
+                None => Err("Integer overflow".to_string()),
+            },
             "/" => Ok(Object::Integer(left / right)),
             "<" => Ok(Object::Bool(left < right)),
             ">" => Ok(Object::Bool(left > right)),
