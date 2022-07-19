@@ -1,6 +1,8 @@
 use crate::lexer::{tokenize, Token, TokenIterator};
 use crate::object::Object;
 
+use std::fmt;
+
 #[derive(Debug, Clone)]
 pub struct ParseError {
     err: String,
@@ -11,6 +13,12 @@ impl ParseError {
         ParseError {
             err: err.to_string(),
         }
+    }
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Parse error: {}", self.err)
     }
 }
 
