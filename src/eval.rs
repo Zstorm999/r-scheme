@@ -86,42 +86,94 @@ fn eval_binop(list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
     }
 
     let operator = &list[0];
-    let left = eval_obj(&list[1], env)?;
-    let right = eval_obj(&list[2], env)?;
-
-    let left = match left {
-        Object::Integer(n) => n,
-        _ => {
-            return Err(format!(
-                "({}) Left operand is not an integer: {}",
-                operator, left
-            ))
-        }
-    };
-
-    let right = match right {
-        Object::Integer(n) => n,
-        _ => {
-            return Err(format!(
-                "({}) Right operand is not an integer: {}",
-                operator, right
-            ))
-        }
-    };
+    let left = &eval_obj(&list[1], env)?;
+    let right = &eval_obj(&list[2], env)?;
 
     if let Object::Symbol(s) = operator {
         match s.as_str() {
-            "+" => Ok(Object::Integer(left + right)),
-            "-" => Ok(Object::Integer(left - right)),
-            "*" => match i64::checked_mul(left, right) {
-                Some(value) => Ok(Object::Integer(value)),
-                None => Err("Integer overflow".to_string()),
+            "+" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l + r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 + r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l + *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l + r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
             },
-            "/" => Ok(Object::Integer(left / right)),
-            "<" => Ok(Object::Bool(left < right)),
-            ">" => Ok(Object::Bool(left > right)),
-            "=" => Ok(Object::Bool(left == right)),
-            "!=" => Ok(Object::Bool(left != right)), // non-standard
+            "-" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l - r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 - r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l - *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l - r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            },
+            "*" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => match i64::checked_mul(*l, *r) {
+                    Some(value) => Ok(Object::Integer(value)),
+                    None => Err("Integer overflow".to_string()),
+                },
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 * r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l * *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l * r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            },
+            "/" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l / r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 / r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l / *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l / r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            },
+            "<" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l < r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) < *r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l < *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l < r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            },
+            ">" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l > r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) > *r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l > *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l > r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            },
+            "=" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l == r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) == *r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l == *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l == r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            },
+            "!=" => match (left, right) {
+                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l != r)),
+                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) != *r)),
+                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l != *r as f64)),
+                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l != r)),
+                _ => Err(format!(
+                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                    operator, left, right
+                )),
+            }, // non-standard
             _ => unreachable!("Unknown binary operator !"),
         }
     } else {

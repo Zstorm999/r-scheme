@@ -19,6 +19,12 @@ fn main() -> std::io::Result<()> {
 
     reader.set_prompt(format!("{}", PROMPT).as_ref())?;
 
+    println!("Welcome to r-scheme — Scheme r7 (incomplete)");
+    println!(
+        "If you have any problem, please fill an issue at https://github.com/Zstorm999/r-scheme"
+    );
+    println!("Type \"exit\" to exit the interpreter");
+
     let mut env = Rc::new(RefCell::new(Env::new()));
 
     while let ReadResult::Input(input) = reader.read_line()? {
@@ -36,6 +42,8 @@ fn main() -> std::io::Result<()> {
                 }
             }
         }
+
+        reader.add_history_unique(input);
     }
 
     println!("Goodbye");

@@ -39,6 +39,8 @@ impl fmt::Display for Object {
                     write!(f, "{}", o)?;
                 }
 
+                write!(f, ")")?;
+
                 Ok(())
             }
         }
