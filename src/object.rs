@@ -16,7 +16,7 @@ impl fmt::Display for Object {
         match self {
             Object::Integer(n) => write!(f, "{}", n),
             Object::Float(fl) => write!(f, "{}", fl),
-            Object::Bool(b) => write!(f, "{}", b),
+            Object::Bool(b) => write!(f, "{}", if *b { "#t" } else { "#f" }),
             Object::String(s) => write!(f, "\"{}\"", s),
             Object::Symbol(s) => write!(f, "{}", s),
             Object::Lambda(params, _) => {

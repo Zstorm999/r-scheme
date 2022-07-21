@@ -15,7 +15,7 @@ pub fn eval(program: &str, env: &mut EnvRef) -> Result<Object, String> {
 
 fn eval_obj(obj: &Object, env: &mut EnvRef) -> Result<Object, String> {
     match obj {
-        Object::Bool(_) => Ok(obj.clone()),
+        Object::Bool(b) => Ok(Object::Bool(*b)),
         Object::Float(x) => Ok(Object::Float(*x)),
         Object::Integer(n) => Ok(Object::Integer(*n)),
         Object::Lambda(_params, _body) => Err("Lambda not yet evaluable".to_string()),
@@ -36,221 +36,190 @@ fn eval_symbol(s: &str, env: &mut EnvRef) -> Result<Object, String> {
 }
 
 fn eval_list(list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
-    let head = match list.get(0) {
-        Some(o) => o,
-        None => return Err("Empty list".to_string()),
-    };
-
-    match head {
-        Object::Symbol(s) => match s.as_str() {
-            "define" => eval_define(&list, env),
-            "+" | "-" | "*" | "/" | "<" | ">" | "=" | "!=" => {
-                return eval_binop(&list, env);
-            }
-            "if" => eval_if(&list, env),
-            "lambda" => eval_lambda(&list),
-            _ => eval_function_call(&s, &list, env),
-        },
-        _ => match list.into_iter().map(|o| eval_obj(o, env)).collect() {
-            Ok(l) => Ok(Object::List(l)),
-            Err(e) => Err(e),
+    match eval_builtin(list, env) {
+        Some(res) => res,
+        None => match list.get(0) {
+            Some(Object::Symbol(name)) => eval_function_call(name, list, env),
+            Some(_) => match list.into_iter().map(|o| eval_obj(o, env)).collect() {
+                Ok(l) => Ok(Object::List(l)),
+                Err(e) => Err(e),
+            },
+            None => Err("Empty list".to_string()),
         },
     }
 }
 
-fn eval_define(list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
-    if list.len() != 3 {
-        return Err(format!(
-            "define expression requires 2 arguments, got {}",
-            list.len() - 1
-        ));
-    }
-    let symbol = match &list[1] {
-        Object::Symbol(s) => s,
-        _ => return Err("Invalid symbol in define expression".to_string()),
-    };
+fn eval_builtin(list: &Vec<Object>, env: &mut EnvRef) -> Option<Result<Object, String>> {
+    const BINOPS: [&str; 8] = ["+", "-", "*", "/", "<", ">", "=", "!="];
 
-    let val = eval_obj(&list[2], env)?;
+    match &list[..] {
+        [Object::Symbol(kw_define), Object::Symbol(s), value] if kw_define == "define" => {
+            Some(define(&s, &value, env))
+        }
+        [Object::Symbol(op), left, right] if BINOPS.iter().any(|s| s == op) => {
+            Some(binop(op, left, right, env))
+        }
+        [Object::Symbol(kw_if), cond, if_clause] if kw_if == "if" => {
+            Some(eval_if(cond, if_clause, env))
+        }
+        [Object::Symbol(kw_if), cond, if_clause, else_clause] if kw_if == "if" => {
+            Some(eval_if_else(cond, if_clause, else_clause, env))
+        }
+        [Object::Symbol(kw_lambda), Object::List(params_list), Object::List(body)]
+            if kw_lambda == "lambda" =>
+        {
+            let mut params = Vec::with_capacity(list.len());
+
+            for param in params_list {
+                match param {
+                    Object::Symbol(s) => params.push(s.clone()),
+                    _ => return Some(Err(format!("Invalid lambda parameter: {}", param))),
+                }
+            }
+
+            Some(Ok(Object::Lambda(params, body.clone())))
+        }
+        _ => None,
+    }
+}
+
+fn define(symbol: &str, value: &Object, env: &mut EnvRef) -> Result<Object, String> {
+    let val = eval_obj(value, env)?;
 
     env.borrow_mut().set(&symbol, val);
-
     Ok(Object::Bool(true))
 }
 
-fn eval_binop(list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
-    if list.len() != 3 {
-        return Err(format!(
-            "Expected 2 arguments to binary operation {}",
-            &list[0]
-        ));
-    }
+fn binop(
+    operator: &str,
+    left: &Object,
+    right: &Object,
+    env: &mut EnvRef,
+) -> Result<Object, String> {
+    let left = &eval_obj(left, env)?;
+    let right = &eval_obj(right, env)?;
 
-    let operator = &list[0];
-    let left = &eval_obj(&list[1], env)?;
-    let right = &eval_obj(&list[2], env)?;
-
-    if let Object::Symbol(s) = operator {
-        match s.as_str() {
-            "+" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l + r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 + r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l + *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l + r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
+    match operator {
+        "+" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l + r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 + r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l + *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l + r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        "-" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l - r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 - r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l - *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l - r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        "*" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => match i64::checked_mul(*l, *r) {
+                Some(value) => Ok(Object::Integer(value)),
+                None => Err("Integer overflow".to_string()),
             },
-            "-" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l - r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 - r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l - *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l - r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            },
-            "*" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => match i64::checked_mul(*l, *r) {
-                    Some(value) => Ok(Object::Integer(value)),
-                    None => Err("Integer overflow".to_string()),
-                },
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 * r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l * *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l * r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            },
-            "/" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l / r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 / r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l / *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l / r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            },
-            "<" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l < r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) < *r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l < *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l < r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            },
-            ">" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l > r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) > *r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l > *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l > r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            },
-            "=" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l == r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) == *r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l == *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l == r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            },
-            "!=" => match (left, right) {
-                (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l != r)),
-                (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) != *r)),
-                (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l != *r as f64)),
-                (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l != r)),
-                _ => Err(format!(
-                    "Unable to apply binary operation on non-numeric values: ({} {} {})",
-                    operator, left, right
-                )),
-            }, // non-standard
-            _ => unreachable!("Unknown binary operator !"),
-        }
-    } else {
-        Err("Operator must be a symbol".to_string())
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 * r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l * *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l * r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        "/" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Integer(l / r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Float(*l as f64 / r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Float(l / *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Float(l / r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        "<" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l < r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) < *r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l < *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l < r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        ">" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l > r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) > *r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l > *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l > r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        "=" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l == r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) == *r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l == *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l == r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        },
+        "!=" => match (left, right) {
+            (Object::Integer(l), Object::Integer(r)) => Ok(Object::Bool(l != r)),
+            (Object::Integer(l), Object::Float(r)) => Ok(Object::Bool((*l as f64) != *r)),
+            (Object::Float(l), Object::Integer(r)) => Ok(Object::Bool(*l != *r as f64)),
+            (Object::Float(l), Object::Float(r)) => Ok(Object::Bool(l != r)),
+            _ => Err(format!(
+                "Unable to apply binary operation on non-numeric values: ({} {} {})",
+                operator, left, right
+            )),
+        }, // non-standard
+        _ => unreachable!("Unknown binary operator !"),
     }
 }
 
-fn eval_if(list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
-    if list.len() != 3 && list.len() != 4 {
-        return Err(format!(
-            "if expression requires 2 or 3 arguments, got {}",
-            list.len() - 1
-        ));
-    }
-
-    let condition = eval_obj(&list[1], env)?;
-
-    let condition = match condition {
-        // #f is the only scheme value evaluating to #f
-        Object::Bool(false) => false,
-        _ => true,
-    };
-
-    if condition == true {
-        eval_obj(&list[2], env)
-    } else {
-        if let Some(else_clause) = list.get(3) {
-            eval_obj(else_clause, env)
-        } else {
-            // unspecified in the specs
-            Ok(Object::Bool(false))
-        }
+fn eval_condition(cond: &Object, env: &mut EnvRef) -> Result<bool, String> {
+    match eval_obj(cond, env)? {
+        Object::Bool(false) => Ok(false),
+        _ => Ok(true),
     }
 }
 
-fn eval_lambda(list: &Vec<Object>) -> Result<Object, String> {
-    if list.len() != 3 {
-        return Err(format!(
-            "lambda expression requires 2 arguments, got {}",
-            list.len() - 1
-        ));
+fn eval_if(condition: &Object, if_clause: &Object, env: &mut EnvRef) -> Result<Object, String> {
+    if eval_condition(condition, env)? == true {
+        eval_obj(if_clause, env)
+    } else {
+        Ok(Object::Bool(false))
     }
+}
 
-    let params = match &list[1] {
-        Object::List(list) => {
-            let mut params = Vec::with_capacity(list.len());
-
-            for param in list {
-                match param {
-                    Object::Symbol(s) => params.push(s.clone()),
-                    _ => return Err(format!("Invalid lambda parameter: {}", param)),
-                }
-            }
-            params
-        }
-        _ => {
-            return Err(format!(
-                "First argument of lambda expression is not a list: {}",
-                &list[1]
-            ))
-        }
-    };
-
-    let body = match &list[2] {
-        Object::List(list) => list.clone(),
-        _ => {
-            return Err(format!(
-                "Second argument of lambda expression is not a list: {}",
-                &list[2]
-            ))
-        }
-    };
-
-    Ok(Object::Lambda(params, body))
+fn eval_if_else(
+    condition: &Object,
+    if_clause: &Object,
+    else_clause: &Object,
+    env: &mut EnvRef,
+) -> Result<Object, String> {
+    if eval_condition(condition, env)? == true {
+        eval_obj(if_clause, env)
+    } else {
+        eval_obj(else_clause, env)
+    }
 }
 
 fn eval_function_call(name: &str, list: &Vec<Object>, env: &mut EnvRef) -> Result<Object, String> {
+    if list.is_empty() {
+        return Err("Empty list".to_string());
+    }
+
     let function = env.borrow_mut().get(name);
 
     if function.is_none() {
